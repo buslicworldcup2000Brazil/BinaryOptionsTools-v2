@@ -58,7 +58,7 @@ async def test_buy_and_check_win(api):
 
     asset = "EURUSD_otc"  # OTC is usually available on weekends too
     amount = 1.0
-    duration = 5
+    duration = 30
 
     # Check if we can get payout for this asset to ensure it's valid
     try:
@@ -70,34 +70,52 @@ async def test_buy_and_check_win(api):
 
     print(f"Buying {asset} for {duration} seconds...")
     try:
-        # Buy without waiting for result first
-        trade_id, trade_info = await api.buy(asset, amount, duration, check_win=False)
+        # Buy with check_win=True — Rust handles the timeout internally
+        trade_id, result = await api.buy(asset, amount, duration, check_win=True)
         assert trade_id
-        assert isinstance(trade_info, dict)
+        assert isinstance(result, dict)
+        assert "result" in result
+        assert result["result"] in ["win", "loss", "draw"]
         print(f"Trade placed: {trade_id}")
-
-        # Now wait for result using check_win
-        print(f"Waiting for trade result (timeout: {duration + 60.0}s)...")
-        try:
-            # Use a reasonable timeout to prevent hanging - should be at least duration + buffer
-            result = await asyncio.wait_for(
-                api.check_win(trade_id),
-                timeout=duration + 20.0,
-            )
-            assert isinstance(result, dict)
-            assert "result" in result
-            assert result["result"] in ["win", "loss", "draw"]
-            print(f"Trade result: {result}")
-        except asyncio.TimeoutError:
-            print(f"Timeout occurred for trade_id: {trade_id}")
-            pytest.fail(f"Timed out waiting for trade result for trade_id: {trade_id}")
-        except Exception as e:
-            print(f"Error during check_win: {e}")
-            pytest.fail(f"Error during check_win: {e}")
+        print(f"Trade result: {result}")
 
     except Exception as e:
         print(f"Trade failed: {e}")
         pytest.fail(f"Trade failed: {e}")
+
+
+@pytest.mark.asyncio
+async def test_check_win_multiple_timeframes(api):
+    """Test check_win works correctly across different trade durations (30s, 60s, 120s).
+
+    Previously this test would fail on 60s+ trades due to a hardcoded 60s timeout
+    in the Python wrapper that cancelled the coroutine before the server responded.
+    """
+    if not api.is_demo():
+        pytest.skip("Skipping trade test on real account to avoid losing money")
+
+    asset = "EURUSD_otc"
+    amount = 1.0
+    timeframes = [30, 60, 120]
+
+    try:
+        payout = await api.payout(asset)
+        if not payout:
+            pytest.skip(f"Asset {asset} not available or no payout")
+    except Exception:
+        pytest.skip(f"Could not check payout for {asset}")
+
+    for duration in timeframes:
+        print(f"\nTesting check_win with {duration}s trade...")
+        try:
+            trade_id, result = await api.buy(asset, amount, duration, check_win=True)
+            assert trade_id
+            assert isinstance(result, dict)
+            assert "result" in result
+            assert result["result"] in ["win", "loss", "draw"]
+            print(f"  {duration}s trade result: {result['result']} (profit: {result.get('profit')})")
+        except Exception as e:
+            pytest.fail(f"check_win failed for {duration}s trade: {e}")
 
 
 @pytest.mark.asyncio
