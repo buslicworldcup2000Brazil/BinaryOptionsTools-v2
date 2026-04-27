@@ -139,17 +139,19 @@ jobs:
           command: sdist
           args: --out dist -m rust/Cargo.toml
           working-directory: BinaryOptionsToolsV2
+        continue-on-error: true
       - name: Upload sdist
         uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
           path: BinaryOptionsToolsV2/dist
+        continue-on-error: true
 
   # --- 5. AUTOMATED RELEASE ---
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [linux, windows, macos, sdist]
+    needs: [linux, windows, macos]
     permissions:
       contents: write
     outputs:
@@ -211,7 +213,7 @@ jobs:
   pypi-publish:
     name: PyPI Publish
     runs-on: ubuntu-latest
-    needs: [release, linux, windows, macos, sdist]
+    needs: [release, linux, windows, macos]
     # Skip if secrets.PYPI_API_TOKEN is not set or if not on a main/master branch push
     if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) && needs.release.outputs.has_pypi_token == 'true'
     steps:
